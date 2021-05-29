@@ -13,7 +13,6 @@ SRC_PATH=.
 # Don't use implicit rules or variables
 # we have explicit rules for everything
 MAKEFLAGS += -rR
-
 SHELL = /usr/bin/env bash -o pipefail
 
 # Usage: $(call quiet-command,command and args,"NAME","args to print")

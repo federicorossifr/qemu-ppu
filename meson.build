@@ -121,6 +121,11 @@ add_global_arguments(config_host['QEMU_CXXFLAGS'].split(),
 add_global_link_arguments(config_host['QEMU_LDFLAGS'].split(),
                           native: false, language: ['c', 'cpp', 'objc'])
 
+
+add_global_arguments('-I/home/federico/cppWorkspace/cppposit_private/include', language: ['c', 'cpp', 'objc'])
+add_global_link_arguments('-lcposit', language: ['c', 'cpp', 'objc'])
+
+
 if targetos == 'linux'
   add_project_arguments('-isystem', meson.current_source_dir() / 'linux-headers',
                         '-isystem', 'linux-headers',
@@ -362,6 +367,10 @@ if not get_option('libnfs').auto() or have_block
                       required: get_option('libnfs'),
                       method: 'pkg-config', kwargs: static_kwargs)
 endif
+
+
+
+
 
 libattr_test = '''
   #include <stddef.h>

@@ -23,6 +23,7 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/qemu-print.h"
 #include "qemu/units.h"
 #include "hw/pci/pci.h"
 #include "hw/hw.h"
@@ -35,6 +36,12 @@
 #include "cposit.h"
 #define TYPE_PCI_EDU_DEVICE "ppu"
 typedef struct PPUState PPUState;
+
+typedef union {
+    uint32_t i;
+    float f;
+} float_t;
+
 DECLARE_INSTANCE_CHECKER(PPUState, PPU,
                          TYPE_PCI_EDU_DEVICE)
 
@@ -147,8 +154,10 @@ static void edu_dma_timer(void *opaque)
         uint64_t dst = edu->dma.dst;
         edu_check_range(dst, edu->dma.cnt, DMA_START, DMA_SIZE);
         dst -= DMA_START;
+        printf("[ppu dma] Reading %ld bytes to %#4lx\n",edu->dma.cnt,dst);
         pci_dma_read(&edu->pdev, edu_clamp_addr(edu, edu->dma.src),
                 edu->dma_buf + dst, edu->dma.cnt);
+        printf("[ppu dma] Read: %d\n",*(int*)(&edu->dma_buf[0]));
     } else {
         uint64_t src = edu->dma.src;
         edu_check_range(src, edu->dma.cnt, DMA_START, DMA_SIZE);
@@ -212,6 +221,7 @@ static uint64_t edu_mmio_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case 0x20:
         val = qatomic_read(&edu->status);
+        qemu_printf("[PPU] Status register: %#8x\n",(uint32_t)val);
         break;
     case 0x24:
         val = edu->irq_status;
@@ -237,7 +247,7 @@ static void edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                 unsigned size)
 {
     PPUState *edu = opaque;
-
+    qemu_printf("[PPU] Req address %ld\n",addr);
     if (addr < 0x80 && size != 4) {
         return;
     }
@@ -248,6 +258,7 @@ static void edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 
     switch (addr) {
     case 0x04:
+        qemu_printf("[PPU] Changing PPU MODE to: %#8x\n",(uint32_t)val);
         edu->mode = val;
         break;
     case 0x08:
@@ -277,18 +288,24 @@ static void edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         edu_lower_irq(edu, val);
         break;
     case 0x80:
+        qemu_printf("[PPU] DMA SRC: %#8x\n",(uint32_t)val);
         dma_rw(edu, true, &val, &edu->dma.src, false);
         break;
     case 0x88:
+        qemu_printf("[PPU] DMA DST: %#8x\n",(uint32_t)val);
         dma_rw(edu, true, &val, &edu->dma.dst, false);
         break;
     case 0x90:
+        qemu_printf("[PPU] DMA CNT: %d\n",(uint32_t)val);
         dma_rw(edu, true, &val, &edu->dma.cnt, false);
         break;
     case 0x98:
+
         if (!(val & EDU_DMA_RUN)) {
             break;
         }
+        qemu_printf("[PPU] DMA CMD: %d\n",(uint32_t)val);
+
         dma_rw(edu, true, &val, &edu->dma.cmd, true);
         break;
     }
@@ -333,24 +350,28 @@ static void *edu_fact_thread(void *opaque)
 
         val = edu->fact;
         qemu_mutex_unlock(&edu->thr_mutex);
-
+        qemu_printf("[PPU] Conversion begin, MODE:%#8x\n",edu->mode);
+        qemu_printf("[PPU] Input: %#8x\n", val);
 
         uint32_t conversion_direction = (edu->mode & 0xF0);
         uint32_t conversion_ptype     = edu->mode & 0x0F;
-
+        float_t f;
         if(conversion_direction) { // 
+            f.i = val;
             switch(conversion_ptype) { // fp32>posit
-                case 0x01: val = posit8_toRaw(posit8_fromFloat((float)val));break;
-                case 0x02: val = posit16_toRaw(posit16_fromFloat((float)val)); break;
+                case 0x01: val = posit8_toRaw(posit8_fromFloat(f.f));break;
+                case 0x02: val = posit16_toRaw(posit16_fromFloat(f.f)); break;
             }
         } else {
             switch(conversion_ptype) { // posit>fp32
-                case 0x01: val = posit8_toFloat(posit8_fromSRaw(val));break;
-                case 0x02: val = posit16_toFloat(posit16_fromSRaw(val)); break;
+                case 0x01: f.f = posit8_toFloat(posit8_fromSRaw(val));break;
+                case 0x02: f.f = posit16_toFloat(posit16_fromSRaw(val)); break;
+                default: f.i = 0xffc00000; break;
             }
+            val = f.i;
         }
 
-        
+        qemu_printf("[PPU] Output: %#8x\n", val);
         ret = val;
         /*
          * We should sleep for a random period here, so that students are

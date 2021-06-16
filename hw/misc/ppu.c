@@ -162,6 +162,8 @@ static void edu_dma_timer(void *opaque)
         uint64_t src = edu->dma.src;
         edu_check_range(src, edu->dma.cnt, DMA_START, DMA_SIZE);
         src -= DMA_START;
+        printf("[ppu dma] Writing %ld bytes to %lx\n",edu->dma.cnt,edu->dma.dst);
+
         pci_dma_write(&edu->pdev, edu_clamp_addr(edu, edu->dma.dst),
                 edu->dma_buf + src, edu->dma.cnt);
     }
@@ -302,6 +304,7 @@ static void edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     case 0x98:
 
         if (!(val & EDU_DMA_RUN)) {
+            qemu_printf("[PPU] BUSY: %d\n",(uint32_t)val);
             break;
         }
         qemu_printf("[PPU] DMA CMD: %d\n",(uint32_t)val);
@@ -437,7 +440,7 @@ static void edu_instance_init(Object *obj)
 {
     PPUState *edu = PPU(obj);
 
-    edu->dma_mask = (1UL << 28) - 1;
+    edu->dma_mask = (1UL << 32) - 1;
     object_property_add_uint64_ptr(obj, "dma_mask",
                                    &edu->dma_mask, OBJ_PROP_FLAG_READWRITE);
 }
